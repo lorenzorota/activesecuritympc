@@ -62,7 +62,21 @@ class PassiveProtocol(ABC):
 
     async def shutdown(self):
         """Gracefully shutdown all connections"""
-        await self.pool.shutdown()
+        # Note: this is copied and modified from the Pool.shutdown() method in tno.mpc.communications.
+        total_bytes_sent = 0
+        total_bytes_recv = 0
+        if (server := self.pool.http_server) is not None:
+            await server.shutdown()
+            total_bytes_recv = server.total_bytes_recv
+        for handler in self.pool.pool_handlers.values():
+            await handler.shutdown()
+            total_bytes_sent += handler.total_bytes_sent
+        self.pool.pool_handlers = {}
+        self.pool.handlers_lookup = {}
+
+        if self.stats_enabled:
+            self.stats['total_bytes_sent'] = total_bytes_sent
+            self.stats['total_bytes_recv'] = total_bytes_recv
 
     async def distribute(
         self,
@@ -193,8 +207,11 @@ class PassiveProtocol(ABC):
         self.establish_connections(ports_list)
 
         # Run sequential protocol composition
+        start_time = time.time()
         await self.compose_protocol(secret)
-
+        end_time = time.time()
+        if self.stats_enabled:
+            self.stats['runtime'] = (end_time - start_time)
         # Gracefully shutdown
         await self.shutdown()
 
@@ -248,17 +265,20 @@ class ActiveProtocol(PassiveProtocol):
                 logger.debug("Broadcasted CRS for `{}`".format(fct.__name__))
                 time_accum += (end_time - start_time)
                 crs_size_accum += len(crs)
-            self.stats['total_crs_generation_time'] = time_accum
-            self.stats['total_crs_len'] = crs_size_accum
+            if self.stats_enabled:
+                self.stats['total_crs_generation_time'] = time_accum
+                self.stats['total_crs_len'] = crs_size_accum
         else:
             crs_size_accum = 0
             for fct in functions:
                 crs = await self.receive(fct.__name__, handlers=[f'{trustee_id}'])
                 zkp.store_crs(fct, crs[0])
                 logger.debug("Received CRS for `{}`".format(fct.__name__))
-                crs_size_accum += len(crs)
-            self.stats['total_crs_generation_time'] = None
-            self.stats['total_crs_len'] = crs_size_accum
+                crs_size_accum += len(crs[0])
+            if self.stats_enabled:
+                self.stats['total_crs_generation_time'] = None
+                self.stats['total_crs_len'] = crs_size_accum
+
     def secure_coin_flipping(self, amount: int, bit_size: int=32) -> List[Any]:
         """Secure private coin-flipping protocol.
 
@@ -313,13 +333,22 @@ class ActiveProtocol(PassiveProtocol):
         # Establish all connections
         self.establish_connections(ports_list)
 
+        t_0 = time.time()
         # 1. Active security compiler setup
         await self.setup()
+        t_1 = time.time()
         # 2. Engagement phase
         output, blindings, commitments = await self.engage(secret)
+        t_2 = time.time()
         # 3. Emulation phase
         await self.emulate(output, blindings, commitments)
+        t_3 = time.time()
 
+        if self.stats_enabled:
+            self.stats['total_runtime'] = t_3 - t_0
+            self.stats['setup_time'] = t_1 - t_0
+            self.stats['engagement_time'] = t_2 - t_1
+            self.stats['emulation_time'] = t_3 - t_2
         # Gracefully shutdown
         await self.shutdown()
 

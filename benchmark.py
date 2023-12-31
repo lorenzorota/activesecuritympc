@@ -3,7 +3,8 @@ import logging
 import multiprocessing
 import random
 import subprocess
-import pandas
+import pandas as pd
+import ast
 import os
 import sys
 
@@ -56,7 +57,7 @@ def run_protocol(i, protocol, rand_val, args):
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as process:
         process.wait()
         out = process.stdout.readlines()
-    return out
+    return ast.literal_eval(out[-1])
 
 
 if __name__ == "__main__":
@@ -80,20 +81,41 @@ if __name__ == "__main__":
 
     # Create a Pool with the number of available CPU cores
     num_cores = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(processes=num_cores)
     print(f'Number of CPU cores: {num_cores}')
 
-    results = []
+    dataframes = []
+    for j in range(args.ensemble + 1):
+        logger.info("Measurement {}".format(j))
+        results = []
 
-    # Instantiate benchmark of 
-    for i in range(args.parties):
-        rand_val = random.randrange(backend_pf[args.backend])
-        results.append(pool.apply_async(run_protocol, args=(i, protocol, rand_val, args)))
+        pool = multiprocessing.Pool(processes=num_cores)
 
-    # Close the pool and wait for all processes to finish
-    pool.close()
-    pool.join()
+        for i in range(args.parties):
+            rand_val = random.randrange(backend_pf[args.backend])
+            results.append(pool.apply_async(run_protocol, args=(i, protocol, rand_val, args)))
 
-    # Optionally, you can get the results if your function returns anything
-    for result in results:
-        print(result.get())
+        # Close the pool and wait for all processes to finish
+        pool.close()
+        pool.join()
+
+        data = [result.get() for result in results]
+
+        # Discard the first measurement to make sure everything is 'running'
+        if j > 0:
+            for i, entry in enumerate(data):
+                df = pd.DataFrame(entry, index=[j*i + j])
+                df['ensemble'] = j
+                dataframes.append(df)
+        else:
+            logger.info("Discarding first measurement")
+    
+    if not os.path.exists("benchmarks"):
+        os.makedirs("benchmarks")
+
+    stats = pd.concat(dataframes)
+    if args.security_level == "active":
+        stats.to_csv("benchmarks/sum_active_{}_{}_parties.csv".format(args.backend, args.parties), index=False)
+    if args.security_level == "passive":
+        stats.to_csv("benchmarks/sum_passive_{}_parties.csv".format(args.parties), index=False)
+    
+    print("Done")
