@@ -2,7 +2,7 @@ import logging
 
 from zkpytoolkit.types import field
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import PassiveProtocol
+from active_security_mpc.template.protocol import PassiveProtocol, stats_time_accumulator
 
 from .decomposition.protocol import protocol_1, protocol_2, protocol_3
 

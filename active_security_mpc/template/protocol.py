@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 from abc import ABC, abstractmethod
@@ -21,6 +22,53 @@ httphandlers_logger = logging.getLogger('tno.mpc.communication.httphandlers')
 httphandlers_logger.setLevel(logging.CRITICAL)
 access_logger = logging.getLogger('aiohttp.access')
 access_logger.setLevel(logging.CRITICAL)
+
+
+def stats_time_accumulator(name):
+    def decorator(method):
+        if asyncio.iscoroutinefunction(method):
+            async def wrapper(self, *args, **kwargs):
+                if self.stats_enabled:
+                    start_time = time.time()
+                    result = await method(self, *args, **kwargs)
+                    end_time = time.time()
+                    self.stats[name] = self.stats.get(name, 0) + (end_time - start_time)
+                else:
+                    result = await method(self, *args, **kwargs)
+                return result
+            return wrapper
+        else:
+            def wrapper(self, *args, **kwargs):
+                if self.stats_enabled:
+                    start_time = time.time()
+                    result = method(self, *args, **kwargs)
+                    end_time = time.time()
+                    self.stats[name] = self.stats.get(name, 0) + (end_time - start_time)
+                else:
+                    result = method(self, *args, **kwargs)
+                return result
+            return wrapper
+    return decorator
+
+def stats_value_accumulator(name, value_map=None):
+    def decorator(method):
+        if asyncio.iscoroutinefunction(method):
+            async def wrapper(self, *args, **kwargs):
+                result = await method(self, *args, **kwargs)
+                if self.stats_enabled:
+                    mapped_result = value_map(result) if value_map else result
+                    self.stats[name] = self.stats.get(name, 0) + mapped_result
+                return result
+            return wrapper
+        else:
+            def wrapper(self, *args, **kwargs):
+                result = method(self, *args, **kwargs)
+                if self.stats_enabled:
+                    mapped_result = value_map(result) if value_map else result
+                    self.stats[name] = self.stats.get(name, 0) + mapped_result
+                return result
+            return wrapper
+    return decorator
 
 
 class PassiveProtocol(ABC):
@@ -78,6 +126,7 @@ class PassiveProtocol(ABC):
             self.stats['total_bytes_sent'] = total_bytes_sent
             self.stats['total_bytes_recv'] = total_bytes_recv
 
+    @stats_time_accumulator('total_communication_time')
     async def distribute(
         self,
         items: Any,
@@ -112,6 +161,7 @@ class PassiveProtocol(ABC):
                 else:
                     await self.pool.send(f"{idx}", items[idx], msg_id=msg_id)
 
+    @stats_time_accumulator('total_communication_time')
     async def receive(
         self,
         msg_id: Union[str, None]=None,
@@ -149,6 +199,7 @@ class PassiveProtocol(ABC):
                 received_shares.append(msg[1])
         return received_shares
 
+    @stats_time_accumulator('total_communication_time')
     async def broadcast(
         self,
         items: Any,
@@ -196,6 +247,7 @@ class PassiveProtocol(ABC):
         else:
             return [secrets.randbelow(2**bit_size) for _ in range(amount)]
 
+    @stats_time_accumulator('total_runtime')
     async def run(self, secret: Any, ports_list: List[int]):
         """Entry point for passively secure sequentially composed MPC protocol
 
@@ -207,11 +259,8 @@ class PassiveProtocol(ABC):
         self.establish_connections(ports_list)
 
         # Run sequential protocol composition
-        start_time = time.time()
         await self.compose_protocol(secret)
-        end_time = time.time()
-        if self.stats_enabled:
-            self.stats['runtime'] = (end_time - start_time)
+        
         # Gracefully shutdown
         await self.shutdown()
 
@@ -244,6 +293,12 @@ class ActiveProtocol(PassiveProtocol):
         """ 
         super().__init__(local_idx, local_port, parties, enable_stats, field_type)
 
+    @stats_value_accumulator('total_crs_len', len)
+    @stats_time_accumulator('total_crs_generation_time')
+    def _generate_crs(self, fct):
+        """Wrapper function for zkp.generate_crs()"""
+        return zkp.generate_crs(fct)
+
     async def trusted_setup(self, functions: List[Callable], trustee_id: int=0):
         """Trusted setup through a trusted party.
 
@@ -255,19 +310,10 @@ class ActiveProtocol(PassiveProtocol):
         # A possible MPC ceremony for groth16 is the powers-of-tau setup.
 
         if self.local_idx == trustee_id:
-            time_accum = 0
-            crs_size_accum = 0
             for fct in functions:
-                start_time = time.time()
-                crs = zkp.generate_crs(fct)
-                end_time = time.time()
+                crs = self._generate_crs(fct)
                 await self.broadcast(crs, fct.__name__)
                 logger.debug("Broadcasted CRS for `{}`".format(fct.__name__))
-                time_accum += (end_time - start_time)
-                crs_size_accum += len(crs)
-            if self.stats_enabled:
-                self.stats['total_crs_generation_time'] = time_accum
-                self.stats['total_crs_len'] = crs_size_accum
         else:
             crs_size_accum = 0
             for fct in functions:
@@ -295,6 +341,12 @@ class ActiveProtocol(PassiveProtocol):
 
         return self.coin_flipping(amount, bit_size)
 
+    @stats_value_accumulator('total_zkp_constraints')
+    @stats_time_accumulator('total_zkp_compile_time')
+    def _compile(self, fct, includes, global_vars, local_vars):
+        """Wrapper function for zkp.compile()"""
+        return zkp.compile(fct, includes, global_vars, local_vars)
+
     def compile_zkps(
             self,
             functions: List[Callable],
@@ -310,19 +362,11 @@ class ActiveProtocol(PassiveProtocol):
             global_vars (dict): This `must` be the dictionary obtained from the globals() function.
             local_vars (dict): This `must` be the dictionary obtained from the locals() function.
         """
-        constraints_accum = 0
-        time_accum = 0
         for fct in functions:
-            start_time = time.time()
-            constraints = zkp.compile(fct, includes, global_vars, local_vars)
-            end_time = time.time()
+            constraints = self._compile(fct, includes, global_vars, local_vars)
             logger.debug('Constraints count `{}`: {}'.format(fct.__name__, constraints))
-            constraints_accum += constraints
-            time_accum += (end_time - start_time)
-        if self.stats_enabled:
-            self.stats['total_zkp_constraints'] = constraints_accum
-            self.stats['total_zkp_compile_time'] = time_accum
 
+    @stats_time_accumulator('total_runtime')
     async def run(self, secret: Any, ports_list: List[int]):
         """Entry point for actively secure sequentially composed MPC protocol.
 
@@ -333,22 +377,15 @@ class ActiveProtocol(PassiveProtocol):
         # Establish all connections
         self.establish_connections(ports_list)
 
-        t_0 = time.time()
         # 1. Active security compiler setup
         await self.setup()
-        t_1 = time.time()
+
         # 2. Engagement phase
         output, blindings, commitments = await self.engage(secret)
-        t_2 = time.time()
+
         # 3. Emulation phase
         await self.emulate(output, blindings, commitments)
-        t_3 = time.time()
 
-        if self.stats_enabled:
-            self.stats['total_runtime'] = t_3 - t_0
-            self.stats['setup_time'] = t_1 - t_0
-            self.stats['engagement_time'] = t_2 - t_1
-            self.stats['emulation_time'] = t_3 - t_2
         # Gracefully shutdown
         await self.shutdown()
 

@@ -14,7 +14,7 @@ elif ZKP._instance.modulus == bn256_scalar_field_modulus:
 elif ZKP._instance.modulus == curve25519_scalar_field_modulus:
     from zkpytoolkit.stdlib.commitment.pedersen.ristretto255.commit import commit_field as commit
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import ActiveProtocol
+from active_security_mpc.template.protocol import ActiveProtocol, stats_time_accumulator
 
 from .decomposition.protocol import protocol_1, protocol_2, protocol_3
 from .transformation.protocol import engage_protocol_1, auth_protocol_2, auth_protocol_3
@@ -31,6 +31,7 @@ class Sum(ActiveProtocol):
     def __init__(self, local_idx, local_port, parties, enable_stats):
         super().__init__(local_idx, local_port, parties, enable_stats, field_type=field)
 
+    @stats_time_accumulator('setup_time')
     async def setup(self):
         N = self.parties
 
@@ -46,6 +47,7 @@ class Sum(ActiveProtocol):
             logger.info("2. Performing trusted setup")
             await self.trusted_setup(functions)
 
+    @stats_time_accumulator('engagement_time')
     async def engage(self, secret):
         """Protocol engagement."""
         logger.info("[Entering protocol engagement phase]")
@@ -106,6 +108,7 @@ class Sum(ActiveProtocol):
 
         return protocol_2_input, protocol_2_blindings, protocol_2_comms
 
+    @stats_time_accumulator('emulation_time')
     async def emulate(self, input, blindings, all_commitments):
         """Protocol emulation"""
         logger.info("[Entering protocol emulation phase]")
