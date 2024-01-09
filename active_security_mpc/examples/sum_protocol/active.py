@@ -1,4 +1,5 @@
 import logging
+import os
 
 from zkpytoolkit import ZKP
 from zkpytoolkit.types import bls12_381_scalar_field_modulus
@@ -14,7 +15,7 @@ elif ZKP._instance.modulus == bn256_scalar_field_modulus:
 elif ZKP._instance.modulus == curve25519_scalar_field_modulus:
     from zkpytoolkit.stdlib.commitment.pedersen.ristretto255.commit import commit_field as commit
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import ActiveProtocol, stats_time_accumulator
+from active_security_mpc.template.protocol import ActiveProtocol, stats_time_accumulator, stats_value_accumulator
 
 from .decomposition.protocol import protocol_1, protocol_2, protocol_3
 from .transformation.protocol import engage_protocol_1, auth_protocol_2, auth_protocol_3
@@ -26,10 +27,30 @@ zkp = ZKP._instance # defined globally across all modules at runtime
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+def get_dir_size(dir_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(dir_path):
+        for file in filenames:
+            file_path = os.path.join(dirpath, file)
+            if not os.path.islink(file_path):
+                total_size += os.path.getsize(file_path)
+    return total_size
+
 # Driver code
 class Sum(ActiveProtocol):
     def __init__(self, local_idx, local_port, parties, enable_stats):
         super().__init__(local_idx, local_port, parties, enable_stats, field_type=field)
+
+    @stats_value_accumulator('total_proof_size', len)
+    @stats_time_accumulator('total_proving_time')
+    def _prove(self, func, *args, **kwargs):
+        """Wrapper function for zkp.prove()"""
+        return zkp.prove(func, *args, **kwargs)
+    
+    @stats_time_accumulator('total_verification_time')
+    def _verify(self, func, *args, return_value=None, **kwargs):
+        """Wrapper function for zkp.verify()"""
+        return zkp.verify(func, *args, return_value=return_value, **kwargs)
 
     @stats_time_accumulator('setup_time')
     async def setup(self):
@@ -93,7 +114,7 @@ class Sum(ActiveProtocol):
         # 3. Prove and verify secret is correct w.r.t commitments
         logger.info("5. Prove and verify secret is correct w.r.t commitments")
         logger.debug("Generating proof for `engage_protocol_1`")
-        proof = zkp.prove(engage_protocol_1, secret, coins, blindings, i, field(1))
+        proof = self._prove(engage_protocol_1, secret, coins, blindings, i, field(1))
         await self.broadcast(proof, "engage_protocol_1_proof")
         proofs = await self.receive("engage_protocol_1_proof")
         proofs.insert(i, proof)
@@ -103,7 +124,7 @@ class Sum(ActiveProtocol):
             if j != i:
                 logger.debug("Verifying proof for `engage_protocol_1` from {}".format(j))
                 zkp.store_proof(engage_protocol_1, proofs[j])
-                is_valid = zkp.verify(engage_protocol_1, None, None, None, j, field(1), return_value=protocol_2_comms[j])
+                is_valid = self._verify(engage_protocol_1, None, None, None, j, field(1), return_value=protocol_2_comms[j])
                 assert(is_valid), "Invalid Proof"
 
         return protocol_2_input, protocol_2_blindings, protocol_2_comms
@@ -127,7 +148,7 @@ class Sum(ActiveProtocol):
         # prove and verify auth_protocol_2 was run correctly w.r.t commitments
         logger.info("7. Authenticate protocol 2")
         logger.debug("Generating proof for `auth_protocol_2`")
-        proof = zkp.prove(auth_protocol_2, input, blindings, commitments, field(1))
+        proof = self._prove(auth_protocol_2, input, blindings, commitments, field(1))
         await self.broadcast(proof, "auth_protocol_2_proof")
         proofs = await self.receive("auth_protocol_2_proof")
         proofs.insert(i, proof)
@@ -138,7 +159,7 @@ class Sum(ActiveProtocol):
                 logger.debug("Verifying proof for `auth_protocol_2` from {}".format(j))
                 zkp.store_proof(auth_protocol_2, proofs[j])
                 commitments = [comm[j] for comm in all_commitments]
-                is_valid = zkp.verify(auth_protocol_2, None, None, commitments, field(1), return_value=protocol_3_input[j])
+                is_valid = self._verify(auth_protocol_2, None, None, commitments, field(1), return_value=protocol_3_input[j])
                 assert(is_valid), "Invalid Proof"
 
         ## Protocol 3
@@ -152,7 +173,7 @@ class Sum(ActiveProtocol):
         # prove and verify auth_protocol_3 was run correctly w.r.t commitments
         logger.info("7. Authenticate protocol 3")
         logger.debug("Generating proof for `auth_protocol_3`")
-        proof = zkp.prove(auth_protocol_3, protocol_3_input, field(1))
+        proof = self._prove(auth_protocol_3, protocol_3_input, field(1))
         await self.broadcast(proof, "auth_protocol_3_proof")
         proofs = await self.receive("auth_protocol_3_proof")
         proofs.insert(i, proof)
@@ -163,7 +184,7 @@ class Sum(ActiveProtocol):
                 logger.debug("Verifying proof for `auth_protocol_3` from {}".format(j))
                 zkp.store_proof(auth_protocol_3, proofs[j])
                 commitments = [comm[j] for comm in all_commitments]
-                is_valid = zkp.verify(auth_protocol_3, protocol_3_input, field(1), return_value=final_output[j])
+                is_valid = self._verify(auth_protocol_3, protocol_3_input, field(1), return_value=final_output[j])
                 assert(is_valid), "Invalid Proof"
 
         # Termination
@@ -172,3 +193,6 @@ class Sum(ActiveProtocol):
             print(success_message(protocol_3_output))
         else:
             raise ValueError(error_message(final_output))
+
+        if self.stats_enabled:
+            self.stats["cache_size"] = get_dir_size('cache_id_{}'.format(self.local_idx))

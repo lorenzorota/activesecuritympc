@@ -162,5 +162,7 @@ cython_debug/
 
 # Additional files and folders
 /figures
+/figures_OLD
 /output
 /benchmarks
+/benchmarks_OLD
