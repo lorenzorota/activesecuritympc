@@ -27,10 +27,20 @@ To get started with ActiveSecurityMPC, follow these steps:
 Once you have installed the necessary dependencies, you can explore the provided example under `examples.sum_protocol`. To run the example for 3 parties, use the following command:
 
 ```bash
-bash demo.sh
+bash run_demo.sh
 ```
 
 This will execute the case study implementation for the sum protocol with 3 parties, showcasing the functionality of ActiveSecurityMPC.
+
+## Benchmarking
+
+A simple benchmarking script is included, which allows you to assess its performance. To run the benchmark, use the following command:
+
+```bash
+bash run_benchmark.sh
+```
+
+This script will provide insights into the passively secure MPC protocol, as well as the actively secure protocol obtained via ActiveSecurityMPC. Feel free to customize the benchmarking parameters based on your requirements.
 
 ## Contributing
 
