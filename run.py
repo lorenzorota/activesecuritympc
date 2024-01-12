@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Configure argparse
-parser = argparse.ArgumentParser(description="MPC sum problem using additive secret sharing scheme.")
+parser = argparse.ArgumentParser(description="Active security compiler for passively secure MPC protocols.")
 parser.add_argument("protocol", help="Protocol name.")
 parser.add_argument("-I", "--idx", type=int, help="Party index argument.", required=True)
 parser.add_argument("-V", "--value", type=int, help="Secret value argument.", required=True)

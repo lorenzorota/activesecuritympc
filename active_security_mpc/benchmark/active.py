@@ -16,7 +16,7 @@ elif ZKP._instance.modulus == bn256_scalar_field_modulus:
 elif ZKP._instance.modulus == curve25519_scalar_field_modulus:
     from zkpytoolkit.stdlib.commitment.pedersen.ristretto255.commit import commit_field as commit
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import ActiveProtocol, stats_time_accumulator, stats_value_accumulator
+from active_security_mpc.template.protocol import ActiveProtocol, stats_measure_communication, stats_time_accumulator, stats_value_accumulator
 
 
 zkp = ZKP._instance # defined globally across all modules at runtime
@@ -25,14 +25,6 @@ zkp = ZKP._instance # defined globally across all modules at runtime
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-def get_dir_size(dir_path):
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(dir_path):
-        for file in filenames:
-            file_path = os.path.join(dirpath, file)
-            if not os.path.islink(file_path):
-                total_size += os.path.getsize(file_path)
-    return total_size
 
 # Driver code
 class Sum(ActiveProtocol):
@@ -73,6 +65,7 @@ class Sum(ActiveProtocol):
         """Wrapper function for zkp.verify()"""
         return zkp.verify(func, *args, return_value=return_value, **kwargs)
 
+    @stats_measure_communication('setup_communication')
     @stats_time_accumulator('setup_time')
     async def setup(self):
         N = self.parties
@@ -89,6 +82,7 @@ class Sum(ActiveProtocol):
             logger.info("2. Performing trusted setup")
             await self.trusted_setup(functions)
 
+    @stats_measure_communication('engagement_communication')
     @stats_time_accumulator('engagement_time')
     async def engage(self, secret):
         """Protocol engagement."""
@@ -150,6 +144,7 @@ class Sum(ActiveProtocol):
 
         return protocol_2_input, protocol_2_blindings, protocol_2_comms
 
+    @stats_measure_communication('emulation_communication')
     @stats_time_accumulator('emulation_time')
     async def emulate(self, input, blindings, all_commitments):
         """Protocol emulation"""
@@ -215,4 +210,8 @@ class Sum(ActiveProtocol):
         else:
             raise ValueError(error_message(final_output))
 
-        self.stats["cache_size"] = get_dir_size('cache_id_{}'.format(self.local_idx))
+        if self.stats_enabled:
+            total_cache_size, folder_sizes = get_dir_size("cache_id_{}".format(self.local_idx))
+            self.stats["cache_size"] = total_cache_size
+            for key, val in folder_sizes.items():
+                self.stats[key + "_size"] = val

@@ -1,3 +1,4 @@
+import os
 
 def success_message(final):
     success_msg = "MPC successful. Final result: {}".format(final)
@@ -44,3 +45,18 @@ def flatten_list(lst):
 
 def unflatten_list(lst, sublist_length):
     return [lst[i:i+sublist_length] for i in range(0, len(lst), sublist_length)]
+
+def get_dir_size(dir_path):
+    total_size = 0
+    folder_sizes = {}
+    for dirpath, dirnames, filenames in os.walk(dir_path):
+        folder_size = 0
+        for file in filenames:
+            file_path = os.path.join(dirpath, file)
+            if not os.path.islink(file_path):
+                size = os.path.getsize(file_path)
+                folder_size += size
+                total_size += size
+        folder_sizes[dirpath.split('/')[-1]] = folder_size
+    folder_sizes.pop(dir_path) # remove main folder as it stores no files, only directories
+    return total_size, folder_sizes

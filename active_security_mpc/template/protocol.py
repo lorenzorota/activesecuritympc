@@ -50,6 +50,32 @@ def stats_time_accumulator(name):
             return wrapper
     return decorator
 
+def stats_measure_communication(name):
+    def decorator(method):
+        if asyncio.iscoroutinefunction(method):
+            async def wrapper(self, *args, **kwargs):
+                if self.stats_enabled:
+                    start_communication = self.communication_stats()
+                    result = await method(self, *args, **kwargs)
+                    end_communication = self.communication_stats()
+                    self.stats[name] = end_communication - start_communication
+                else:
+                    result = await method(self, *args, **kwargs)
+                return result
+            return wrapper
+        else:
+            def wrapper(self, *args, **kwargs):
+                if self.stats_enabled:
+                    start_communication = self.communication_stats()
+                    result = method(self, *args, **kwargs)
+                    end_communication = self.communication_stats()
+                    self.stats[name] = end_communication - start_communication
+                else:
+                    result = method(self, *args, **kwargs)
+                return result
+            return wrapper
+    return decorator
+
 def stats_value_accumulator(name, value_map=None):
     def decorator(method):
         if asyncio.iscoroutinefunction(method):
@@ -107,6 +133,17 @@ class PassiveProtocol(ABC):
         for idx, port in enumerate(ports):
             if idx != self.local_idx:
                 self.pool.add_http_client(f"{idx}", addr="127.0.0.1", port=port)
+
+    def communication_stats(self):
+        """Return total communication cost"""
+        total_bytes_sent = 0
+        total_bytes_recv = 0
+        if (server := self.pool.http_server) is not None:
+            total_bytes_recv = server.total_bytes_recv
+        for handler in self.pool.pool_handlers.values():
+            total_bytes_sent += handler.total_bytes_sent
+        
+        return total_bytes_recv + total_bytes_sent
 
     async def shutdown(self):
         """Gracefully shutdown all connections"""
