@@ -7,6 +7,7 @@ import pandas as pd
 import ast
 import os
 import sys
+import csv
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -28,8 +29,9 @@ parser.add_argument(
     "--security-level",
     default="passive",
     help="Set the security level of the MPC protocol. Defaults to: passive.",
-    choices=["passive", "active"]
+    choices=["passive", "active", "neither"]
 )
+parser.add_argument("--measure-zkp", action="store_true", help="Measure the number of ZKP constraints generated for each subprotocol.")
 
 # handler = logging.StreamHandler()
 # handler.setLevel(logging.DEBUG)
@@ -73,49 +75,62 @@ if __name__ == "__main__":
         "bulletproofs": curve25519_scalar_field_modulus
     }
 
-    protocol = "active_security_mpc.benchmark"
-    protocol_module_name = "{}.{}".format(protocol, args.security_level)
+    if args.measure_zkp:
+        protocol = "active_security_mpc.benchmark.measure_zk_constraints"
+        filename = "benchmarks/zkp_constraints_measurements_{}.csv".format(args.backend)
+        data = run_protocol(0, protocol, 0, args)
+        fieldnames = list(data.keys())
+        
+        if not os.path.exists("benchmarks"):
+            os.makedirs("benchmarks")
 
-    if not os.path.exists("output"):
-        os.makedirs("output")
+        file_exists = os.path.exists(filename)
+        with open(filename, 'a', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(data)            
+    else:
+        protocol = "active_security_mpc.benchmark"
+        protocol_module_name = "{}.{}".format(protocol, args.security_level)
 
-    # Create a Pool with the number of available CPU cores
-    num_cores = multiprocessing.cpu_count()
-    print(f'Number of CPU cores: {num_cores}')
+        # Create a Pool with the number of available CPU cores
+        num_cores = multiprocessing.cpu_count()
+        print(f'Number of CPU cores: {num_cores}')
 
-    dataframes = []
-    for j in range(args.ensemble + 1):
-        logger.info("Measurement {}".format(j))
-        results = []
+        dataframes = []
+        for j in range(args.ensemble + 1):
+            logger.info("Measurement {}".format(j))
+            results = []
 
-        pool = multiprocessing.Pool(processes=num_cores)
+            pool = multiprocessing.Pool(processes=num_cores)
 
-        for i in range(args.parties):
-            rand_val = random.randrange(backend_pf[args.backend])
-            results.append(pool.apply_async(run_protocol, args=(i, protocol, rand_val, args)))
+            for i in range(args.parties):
+                rand_val = random.randrange(backend_pf[args.backend])
+                results.append(pool.apply_async(run_protocol, args=(i, protocol, rand_val, args)))
 
-        # Close the pool and wait for all processes to finish
-        pool.close()
-        pool.join()
+            # Close the pool and wait for all processes to finish
+            pool.close()
+            pool.join()
 
-        data = [result.get() for result in results]
+            data = [result.get() for result in results]
 
-        # Discard the first measurement to make sure everything is 'running'
-        if j > 0:
-            for i, entry in enumerate(data):
-                df = pd.DataFrame(entry, index=[j*i + j])
-                df['ensemble'] = j
-                dataframes.append(df)
-        else:
-            logger.info("Discarding first measurement")
-    
-    if not os.path.exists("benchmarks"):
-        os.makedirs("benchmarks")
+            # Discard the first measurement to make sure everything is 'running'
+            if j > 0:
+                for i, entry in enumerate(data):
+                    df = pd.DataFrame(entry, index=[j*i + j])
+                    df['ensemble'] = j
+                    dataframes.append(df)
+            else:
+                logger.info("Discarding first measurement")
+        
+        if not os.path.exists("benchmarks"):
+            os.makedirs("benchmarks")
 
-    stats = pd.concat(dataframes)
-    if args.security_level == "active":
-        stats.to_csv("benchmarks/sum_active_{}_{}_parties.csv".format(args.backend, args.parties), index=False)
-    if args.security_level == "passive":
-        stats.to_csv("benchmarks/sum_passive_{}_parties.csv".format(args.parties), index=False)
-    
-    print("Done")
+        stats = pd.concat(dataframes)
+        if args.security_level == "active":
+            stats.to_csv("benchmarks/sum_active_{}_{}_parties.csv".format(args.backend, args.parties), index=False)
+        if args.security_level == "passive":
+            stats.to_csv("benchmarks/sum_passive_{}_parties.csv".format(args.parties), index=False)
+        
+        print("Done")

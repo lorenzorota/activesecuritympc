@@ -11,6 +11,7 @@ logger.setLevel(logging.INFO)
 # Configure argparse
 parser = argparse.ArgumentParser(description="Active security compiler for passively secure MPC protocols.")
 parser.add_argument("protocol", help="Protocol name.")
+parser.add_argument("-N", "--name", type=str, default="Sum", help="Protocol class name.")
 parser.add_argument("-I", "--idx", type=int, help="Party index argument.", required=True)
 parser.add_argument("-V", "--value", type=int, help="Secret value argument.", required=True)
 parser.add_argument("-P", "--parties", type=int, default=3, help="The number of parties.")
@@ -26,7 +27,7 @@ parser.add_argument(
     "--security-level",
     default="passive",
     help="Set the security level of the MPC protocol. Defaults to: passive.",
-    choices=["passive", "active"]
+    choices=["passive", "active", "neither"]
 )
 parser.add_argument("-D", "--debug", action="store_true", help="Enable debug mode.")
 parser.add_argument("-S", "--stats", action="store_true", help="Save statistics from the MPC instance.")    
@@ -46,7 +47,10 @@ if __name__ == "__main__":
     from zkpytoolkit import ZKP
 
     # Determine which protocol to run:
-    protocol_module_name = "{}.{}".format(args.protocol, args.security_level)
+    if args.security_level in ["passive", "active"]:
+        protocol_module_name = "{}.{}".format(args.protocol, args.security_level)
+    else:
+        protocol_module_name = args.protocol
 
     # Configure protocol
     N = int(args.parties)
@@ -59,7 +63,7 @@ if __name__ == "__main__":
     from zkpytoolkit.types import field
     try:
         protocol_module = importlib.import_module(protocol_module_name)
-        Sum = getattr(protocol_module, "Sum")
+        Sum = getattr(protocol_module, args.name)
     except ImportError:
         print(f"Error: Unable to import module '{protocol_module_name}'")
         exit(1)
