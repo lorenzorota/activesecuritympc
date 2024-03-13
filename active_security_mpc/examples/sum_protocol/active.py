@@ -18,7 +18,7 @@ from active_security_mpc.utilities import *
 from active_security_mpc.template.protocol import ActiveProtocol, stats_measure_communication, stats_time_accumulator, stats_value_accumulator
 
 from .decomposition.protocol import protocol_1, protocol_2, protocol_3
-from .transformation.protocol import engage_protocol_1, auth_protocol_2, auth_protocol_3
+from .zk_statements.protocol import engage_protocol_1, auth_protocol_2, auth_protocol_3
 
 
 zkp = ZKP._instance # defined globally across all modules at runtime

@@ -36,7 +36,7 @@ class Sum(ActiveProtocol):
 
         # Import protocols
         decompositions_module = ".decompositions.protocol_{}p".format(parties)
-        transformations_module = ".transformations.protocol_{}p".format(parties)
+        zk_statements_module = ".zk_statements.protocol_{}p".format(parties)
         try:
             mod = importlib.import_module(decompositions_module, "active_security_mpc.benchmark")
             protocol_1 = getattr(mod, "protocol_1")
@@ -46,12 +46,12 @@ class Sum(ActiveProtocol):
             print(f"Error: Unable to import module '{decompositions_module}'")
             exit(1)
         try:
-            mod = importlib.import_module(transformations_module, "active_security_mpc.benchmark")
+            mod = importlib.import_module(zk_statements_module, "active_security_mpc.benchmark")
             engage_protocol_1 = getattr(mod, "engage_protocol_1")
             auth_protocol_2 = getattr(mod, "auth_protocol_2")
             auth_protocol_3 = getattr(mod, "auth_protocol_3")
         except ImportError:
-            print(f"Error: Unable to import module '{transformations_module}'")
+            print(f"Error: Unable to import module '{zk_statements_module}'")
             exit(1)
 
     @stats_value_accumulator('total_proof_size', len)
