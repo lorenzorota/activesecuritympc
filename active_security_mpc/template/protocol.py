@@ -3,7 +3,7 @@ import logging
 import secrets
 from abc import ABC, abstractmethod
 import time
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List, Tuple, Union
 
 from tno.mpc.communication import Pool
 
@@ -267,6 +267,40 @@ class PassiveProtocol(ABC):
         else:
             await self.pool.broadcast(items, msg_id=msg_id)
 
+    async def communicate(
+            self,
+            data: Any,
+            model: str,
+            tag: str,
+            data_type: Union[str, None]=None,
+            flatten: bool=False,
+            unflatten: Union[int, None]=None
+        ) -> List[Any]:
+        """Wrapper function for simplifying MPC communication.
+
+        Args:
+            data (Any): Items that are to be broadcasted or distributed.
+            model (str): Either "broadcast" or "distribute".
+            tag (str): The message identifier.
+            data_type (Union[str, None], optional): Type of item, used for converting field elements.. Defaults to None.
+            flatten (bool, optional): Specifies whether list should be flattened. Defaults to False.
+            unflatten (Union[int, None], optional): The number of items per list. Defaults to None.
+
+        Returns:
+            List[Any]: A list of received items from all parties, including the sent item.
+        """
+        if model == "broadcast":
+            local_item = data
+            await self.broadcast(data, tag, data_type, flatten=flatten)
+        elif model == "distribute":
+            local_item = data[self.local_idx]
+            await self.distribute(data, self.parties, tag, data_type, flatten=flatten)
+        else:
+            raise ValueError("Invalid form of communication specified")
+        received_data = await self.receive(tag, data_type, unflatten=unflatten)
+        received_data.insert(self.local_idx, local_item)
+        return received_data
+
     def coin_flipping(self, amount: int, bit_size: int=32) -> List[Any]:
         """Private coin-flipping protocol
 
@@ -402,6 +436,42 @@ class ActiveProtocol(PassiveProtocol):
         for fct in functions:
             constraints = self._compile(fct, includes, global_vars, local_vars)
             logger.debug('Constraints count `{}`: {}'.format(fct.__name__, constraints))
+
+    @stats_value_accumulator('total_proof_size', len)
+    @stats_time_accumulator('total_proving_time')
+    def _prove(self, func, *args, **kwargs):
+        """Wrapper function for zkp.prove()"""
+        return zkp.prove(func, *args, **kwargs)
+    
+    @stats_time_accumulator('total_verification_time')
+    def _verify(self, func, *args, return_value=None, **kwargs):
+        """Wrapper function for zkp.verify()"""
+        return zkp.verify(func, *args, return_value=return_value, **kwargs)
+    
+    async def authenticate(
+            self,
+            subprotocol: Callable,
+            args_prove: Tuple[Any],
+            args_verify: Tuple[Any],
+        ):
+        """Authenticate subprotocol by proving and verifying the ZK-statement.
+
+        Args:
+            subprotocol (Callable): The subprotocol to be authenticated.
+            args_prove (Tuple[Any]): The prover statement, i.e. instances and witnesses.
+            args_verify (Tuple[Any]): The verifier statement, i.e. instances.
+        """
+        i = self.local_idx
+        N = self.parties
+        proof = self._prove(subprotocol, *args_prove)
+        proofs = await self.communicate(proof, "broadcast", subprotocol.__name__)
+
+        # Assume that in args_verify the first element is the return value
+        for j in range(N):
+            if j != i:
+                zkp.store_proof(subprotocol, proofs[j])
+                validity = self._verify(subprotocol, *args_verify[1][j], return_value=args_verify[0][j])
+                assert(validity), "Invalid Proof"
 
     @stats_time_accumulator('total_runtime')
     async def run(self, secret: Any, ports_list: List[int]):

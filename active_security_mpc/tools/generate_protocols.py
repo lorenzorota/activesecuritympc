@@ -12,12 +12,12 @@ def substitute_variables(input_file, output_file, substitutions):
         file.write(content)
 
 # Create folders if they are missing
-if not os.path.exists('transformations'):
-    os.makedirs('transformations')
+if not os.path.exists('zk_statements'):
+    os.makedirs('zk_statements')
 if not os.path.exists('decompositions'):
     os.makedirs('decompositions')
 
-transformation_protocol_input = 'transformation_template_protocol.py.txt'
+zk_statements_protocol_input = 'zk_statements_template_protocol.py.txt'
 decomposition_protocol_input = 'decomposition_template_protocol.py.txt'
 additive_input = 'decomposition_template_additive.py.txt'
 
@@ -33,11 +33,11 @@ for i in range(3, 101):
     }
 
     # Output files 
-    transformation_protocol_output = 'transformations/protocol_{}p.py'.format(INPUT)
+    zk_statements_protocol_output = 'zk_statements/protocol_{}p.py'.format(INPUT)
     decomposition_protocol_output = 'decompositions/protocol_{}p.py'.format(INPUT)
     additive_output = 'decompositions/additive_{}p.py'.format(INPUT)
 
     # Perform substitutions
-    substitute_variables(transformation_protocol_input, transformation_protocol_output, substitutions)
+    substitute_variables(zk_statements_protocol_input, zk_statements_protocol_output, substitutions)
     substitute_variables(decomposition_protocol_input, decomposition_protocol_output, substitutions)
     substitute_variables(additive_input, additive_output, substitutions)

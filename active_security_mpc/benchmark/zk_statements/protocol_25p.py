@@ -12,46 +12,44 @@ elif ZKP._instance.modulus == bn256_scalar_field_modulus:                       
 elif ZKP._instance.modulus == curve25519_scalar_field_modulus:                                      #zk_ignore
     from zkpytoolkit.stdlib.commitment.pedersen.ristretto255.commit import commit_field as commit   #zk_ignore
     
-from ..decompositions.protocol_25p import protocol_1, protocol_2, protocol_3
+from ..decompositions.protocol_25p import protocol_0, protocol_1, protocol_2
 
 N: int = 25 # Hardcoded number of parties
 
-# Active security components
-def engage_protocol_1(
+# ZK-statements for protocol authentication
+
+def auth_protocol_0(
     secret: Private[field],
     randomness: Private[Array[field, 24]],
     blinding_factors: Private[Array[field, 50]],
     party_index: Public[int],
     _one: Public[field],
 ) -> Array[Array[int, 8], 25]:
-    """Engagement of secret in protocol 1."""
+    """Private protocol authentication for protocol 0"""
     outputs_comm: Array[Array[int, 8], 25] = [[0 for _ in range(8)] for _ in range(N)]
-    outputs: Array[field, 25] = protocol_1(secret, randomness, party_index, _one)
+    outputs: Array[field, 25] = protocol_0(secret, randomness, party_index, _one)
 
     for i in range(N):
         outputs_comm[i] = commit(outputs[i], blinding_factors[2*i:2*i+2])
     return outputs_comm
 
-def auth_protocol_2(
+def auth_protocol_1(
     private_input: Private[Array[field, 25]],
     blinding_factors: Private[Array[field, 50]],
     public_input_comm: Public[Array[Array[int, 8], 25]],
     _one: Public[field],
 ) -> field:
-    """Authenticated emulation of protocol 2."""
+    """Public protocol authentication for protocol 1"""
     # Verify that the input: `private_shares' is correct
     for i in range(N):
         assert(public_input_comm[i] == commit(private_input[i], blinding_factors[2*i:2*i+2])), "Invalid commitment"
 
-    # Emulate protocol_2
-    return protocol_2(private_input, _one)
+    return protocol_1(private_input, _one)
 
-def auth_protocol_3(
+def auth_protocol_2(
     public_input: Public[Array[field, 25]],
     _one: Public[field],
 ) -> field:
-    """Authenticated emulation of protocol 3."""
+    """Public protocol authentication for protocol 2"""
     # Since there is no private input, no commitment openings need to be verified
-
-    # Emulate protocol_3
-    return protocol_3(public_input, _one)
+    return protocol_2(public_input, _one)

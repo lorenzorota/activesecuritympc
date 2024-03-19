@@ -15,10 +15,10 @@ elif ZKP._instance.modulus == bn256_scalar_field_modulus:
 elif ZKP._instance.modulus == curve25519_scalar_field_modulus:
     from zkpytoolkit.stdlib.commitment.pedersen.ristretto255.commit import commit_field as commit
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import ActiveProtocol, stats_measure_communication, stats_time_accumulator, stats_value_accumulator
+from active_security_mpc.template.protocol import ActiveProtocol, stats_measure_communication, stats_time_accumulator
 
-from .decomposition.protocol import protocol_1, protocol_2, protocol_3
-from .zk_statements.protocol import engage_protocol_1, auth_protocol_2, auth_protocol_3
+from .decomposition.protocol import protocol_0, protocol_1, protocol_2
+from .zk_statements.protocol import auth_protocol_0, auth_protocol_1, auth_protocol_2
 
 
 zkp = ZKP._instance # defined globally across all modules at runtime
@@ -33,159 +33,106 @@ class Sum(ActiveProtocol):
     def __init__(self, local_idx, local_port, parties, enable_stats):
         super().__init__(local_idx, local_port, parties, enable_stats, field_type=field)
 
-    @stats_value_accumulator('total_proof_size', len)
-    @stats_time_accumulator('total_proving_time')
-    def _prove(self, func, *args, **kwargs):
-        """Wrapper function for zkp.prove()"""
-        return zkp.prove(func, *args, **kwargs)
-    
-    @stats_time_accumulator('total_verification_time')
-    def _verify(self, func, *args, return_value=None, **kwargs):
-        """Wrapper function for zkp.verify()"""
-        return zkp.verify(func, *args, return_value=return_value, **kwargs)
-
     @stats_measure_communication('setup_communication')
     @stats_time_accumulator('setup_time')
     async def setup(self):
+        """Compiler setup"""
         N = self.parties
 
         logger.info("[Entering setup phase]")
-        # 1. Compile the ZKPs
-        logger.info("1. Running ZKP compiler")
-        functions = [engage_protocol_1, auth_protocol_2, auth_protocol_3]
-        includes = [commit, N, protocol_1, protocol_2, protocol_3]
+        # Step 0(a): Compiling the ZK-statements
+        logger.info("Running step 0(a).")
+        functions = [auth_protocol_0, auth_protocol_1, auth_protocol_2]
+        includes = [commit, N, protocol_0, protocol_1, protocol_2]
         self.compile_zkps(functions, includes, globals(), locals())
 
-        # 2. Perform a trusted setup (only for groth16 backend at the moment)
+        # Step 0(b): Performing a trusted up
         if zkp.backend in ["groth16"]:
-            logger.info("2. Performing trusted setup")
+            logger.info("Running step 0(b).")
             await self.trusted_setup(functions)
 
     @stats_measure_communication('engagement_communication')
     @stats_time_accumulator('engagement_time')
     async def engage(self, secret):
-        """Protocol engagement."""
+        """Protocol engagement"""
         logger.info("[Entering protocol engagement phase]")
         i = self.local_idx
         N = self.parties
 
-        # 1. Obtain secure private coins
-        logger.info("3. Obtaining secure private coins")
+        # Step 1: Obtain randomness
+        logger.info("Running step 1.")
         coins = self.secure_coin_flipping(N - 1)
         logger.debug("Private coins: \n{}".format(coins))
 
-        # 2a. Obtain outputs (secret shares) and their commitments via protocol 0.
-        logger.info("4a. Obtaining secret shares, commitments and blinding factors")
-        blindings = self.coin_flipping(2 * N)
-        protocol_1_output = protocol_1(secret, coins, i, field(1))
-        protocol_1_comms = engage_protocol_1(secret, coins, blindings, i, field(1))
-        logger.debug("Private secret shares: \n{}".format(shares_info(protocol_1_output)))
-        logger.debug("Private secret share commitments: \n{}".format(commitments_info(protocol_1_comms)))
-        logger.debug("Private secret share commitment blinding factors: \n{}".format(blinding_factors_info(blindings)))
+        # Step 2(b)i: Compute protocol_0 functionality
+        logger.info("Running step 2(b)i.")
+        outputs_0 = protocol_0(secret, coins, i, field(1))
+        logger.debug("Private secret shares: \n{}".format(shares_info(outputs_0)))
 
-        # 2b. Broadcast commitments
-        logger.info("4b. Broadcasting commitments")
-        await self.broadcast(protocol_1_comms, "protocol_1_comms", "int_list", flatten=True)
-        protocol_2_comms = await self.receive("protocol_1_comms", "int_list", unflatten=8)
-        protocol_2_comms.insert(i, protocol_1_comms)
-        logger.debug("Received all commitments: \n{}".format(commitments_info(protocol_2_comms)))
+        # Step 2(b)ii: Compute commitments and blinding factors to outputs of protocol_0
+        logger.info("Running step 2(b)ii.")
+        my_blindings = self.coin_flipping(2 * N)
+        my_commitments = auth_protocol_0(secret, coins, my_blindings, i, field(1))
+        commitments = await self.communicate(my_commitments, "broadcast", "protocol_0", "int_list", flatten=True, unflatten=8)
+        logger.debug("Private secret share commitments: \n{}".format(commitments_info(my_commitments)))
+        logger.debug("Private secret share commitment blinding factors: \n{}".format(blinding_factors_info(my_blindings)))
+        logger.debug("Received all commitments: \n{}".format(commitments_info(commitments)))
 
-        # 2c. Distribute shares and blinding factors
-        logger.info("4c. Distributing secret shares and blinding factors")
-        await self.distribute(protocol_1_output, N, "engagement", "field")
-        protocol_2_input = await self.receive("engagement", "field")
-        protocol_2_input.insert(i, protocol_1_output[i])
-        await self.distribute(blindings[0::2], N, "blinding_factor_1", "field")
-        await self.distribute(blindings[1::2], N, "blinding_factor_2", "field")
-        blindings_1 = await self.receive("blinding_factor_1", "field")
-        blindings_2 = await self.receive("blinding_factor_2", "field")
-        protocol_2_blindings = [item for pair in zip(blindings_1, blindings_2) for item in pair]
-        protocol_2_blindings.insert(2*i, blindings[2*i])
-        protocol_2_blindings.insert(2*i+1, blindings[2*i+1])
-        logger.debug("Received secret shares: \n{}".format(shares_info(protocol_2_input)))
-        logger.debug("Received secret share commitment blinding factors: \n{}".format(blinding_factors_info(protocol_2_blindings)))
+        # Step 2(b)iii: Distribute outputs and blinding factors
+        logger.info("Running step 2(b)iii.")
+        inputs_1 = await self.communicate(outputs_0, "distribute", "engagement", "field")
+        blindings_1 = await self.communicate(my_blindings[0::2], "distribute", "blinding_factor_1", "field")
+        blindings_2 = await self.communicate(my_blindings[1::2], "distribute", "blinding_factor_2", "field")
+        blindings = [item for pair in zip(blindings_1, blindings_2) for item in pair]
+        logger.debug("Received secret shares: \n{}".format(shares_info(inputs_1)))
+        logger.debug("Received secret share commitment blinding factors: \n{}".format(blinding_factors_info(blindings)))
 
-        # 3. Prove and verify secret is correct w.r.t commitments
-        logger.info("5. Prove and verify secret is correct w.r.t commitments")
-        logger.debug("Generating proof for `engage_protocol_1`")
-        proof = self._prove(engage_protocol_1, secret, coins, blindings, i, field(1))
-        await self.broadcast(proof, "engage_protocol_1_proof")
-        proofs = await self.receive("engage_protocol_1_proof")
-        proofs.insert(i, proof)
-        logger.debug("Received proofs for `engage_protocol_1`")
+        # Step 2(b)iv: Authenticate protocol_0
+        logger.info("Running step 2(b)iv.")
+        args_prove = (secret, coins, my_blindings, i, field(1))
+        args_verify = (commitments, [[None, None, None, j, field(1)] for j in range(N)])
+        await self.authenticate(auth_protocol_0, args_prove, args_verify)
 
-        for j in range(N):
-            if j != i:
-                logger.debug("Verifying proof for `engage_protocol_1` from {}".format(j))
-                zkp.store_proof(engage_protocol_1, proofs[j])
-                is_valid = self._verify(engage_protocol_1, None, None, None, j, field(1), return_value=protocol_2_comms[j])
-                assert(is_valid), "Invalid Proof"
-
-        return protocol_2_input, protocol_2_blindings, protocol_2_comms
+        return inputs_1, blindings, commitments
 
     @stats_measure_communication('emulation_communication')
     @stats_time_accumulator('emulation_time')
-    async def emulate(self, input, blindings, all_commitments):
+    async def emulate(self, inputs, blindings, all_commitments):
         """Protocol emulation"""
         logger.info("[Entering protocol emulation phase]")
         i = self.local_idx
         N = self.parties
 
-        ## Protocol 2
-        logger.info("6. Run protocol 2")
-        commitments = [comm[i] for comm in all_commitments]
-        protocol_2_output = auth_protocol_2(input, blindings, commitments, field(1))
-        await self.broadcast(protocol_2_output, "protocol_2", "field")
-        protocol_3_input = await self.receive("protocol_2", "field")
-        protocol_3_input.insert(i, protocol_2_output)
-        logger.debug("Received secret shares: \n{}".format(shares_info(protocol_3_input)))
+        incoming_commitments = [[comm[j] for comm in all_commitments] for j in range(N)]
 
-        # prove and verify auth_protocol_2 was run correctly w.r.t commitments
-        logger.info("7. Authenticate protocol 2")
-        logger.debug("Generating proof for `auth_protocol_2`")
-        proof = self._prove(auth_protocol_2, input, blindings, commitments, field(1))
-        await self.broadcast(proof, "auth_protocol_2_proof")
-        proofs = await self.receive("auth_protocol_2_proof")
-        proofs.insert(i, proof)
-        logger.debug("Received proofs for `auth_protocol_2`")
+        # Step 3(a): Compute and broadcast protocol_1 functionality
+        logger.info("Running step 3(a)")
+        output_2 = protocol_1(inputs, field(1))
+        inputs_2 = await self.communicate(output_2, "broadcast", "protocol_1", "field")
+        logger.debug("Received secret shares: \n{}".format(shares_info(inputs_2)))
 
-        for j in range(N):
-            if j != i:
-                logger.debug("Verifying proof for `auth_protocol_2` from {}".format(j))
-                zkp.store_proof(auth_protocol_2, proofs[j])
-                commitments = [comm[j] for comm in all_commitments]
-                is_valid = self._verify(auth_protocol_2, None, None, commitments, field(1), return_value=protocol_3_input[j])
-                assert(is_valid), "Invalid Proof"
+        # Step 3(b): Authenticate protocol_1
+        logger.info("Running step 3(b)")
+        args_prove = (inputs, blindings, incoming_commitments[i], field(1))
+        args_verify = (inputs_2, [[None, None, incoming_commitments[j], field(1)] for j in range(N)])
+        await self.authenticate(auth_protocol_1, args_prove, args_verify)
 
-        ## Protocol 3
-        logger.info("6. Run protocol 3")
-        protocol_3_output = auth_protocol_3(protocol_3_input, field(1))
-        await self.broadcast(protocol_3_output, "protocol_3", "field")
-        final_output = await self.receive("protocol_3", "field")
-        final_output.insert(i, protocol_3_output)
+        # Step 3(a): Compute and broadcast protocol_2 functionality
+        logger.info("Running step 3(a)")
+        output_2 = protocol_2(inputs_2, field(1))
+        final_output = await self.communicate(output_2, "broadcast", "protocol_2", "field")
         logger.debug("Received secret shares: \n{}".format(shares_info(final_output)))
 
-        # prove and verify auth_protocol_3 was run correctly w.r.t commitments
-        logger.info("7. Authenticate protocol 3")
-        logger.debug("Generating proof for `auth_protocol_3`")
-        proof = self._prove(auth_protocol_3, protocol_3_input, field(1))
-        await self.broadcast(proof, "auth_protocol_3_proof")
-        proofs = await self.receive("auth_protocol_3_proof")
-        proofs.insert(i, proof)
-        logger.debug("Received proofs for `auth_protocol_3`")
-
-        for j in range(N):
-            if j != i:
-                logger.debug("Verifying proof for `auth_protocol_3` from {}".format(j))
-                zkp.store_proof(auth_protocol_3, proofs[j])
-                commitments = [comm[j] for comm in all_commitments]
-                is_valid = self._verify(auth_protocol_3, protocol_3_input, field(1), return_value=final_output[j])
-                assert(is_valid), "Invalid Proof"
+        # Step 3(b): Authenticate protocol_2
+        logger.info("Running step 3(b)")
+        args_prove = (inputs_2, field(1))
+        args_verify = (final_output, [[inputs_2, field(1)] for j in range(N)])
+        await self.authenticate(auth_protocol_2, args_prove, args_verify)
 
         # Termination
         logger.info("[Check final outputs]")
-        if all(output == protocol_3_output for output in final_output):
-            print(success_message(protocol_3_output))
+        if all(output == output_2 for output in final_output):
+            print(success_message(output_2))
         else:
             raise ValueError(error_message(final_output))
 

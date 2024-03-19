@@ -2,9 +2,9 @@ import logging
 
 from zkpytoolkit.types import field
 from active_security_mpc.utilities import *
-from active_security_mpc.template.protocol import PassiveProtocol, stats_time_accumulator
+from active_security_mpc.template.protocol import PassiveProtocol
 
-from .decomposition.protocol import protocol_1, protocol_2, protocol_3
+from .decomposition.protocol import protocol_0, protocol_1, protocol_2
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -22,27 +22,21 @@ class Sum(PassiveProtocol):
 
         coins = self.coin_flipping(N - 1)
 
-        ## Protocol 1 (pre-processing)
-        protocol_1_output = protocol_1(secret, coins, i, field(1))
-        await self.distribute(protocol_1_output, N, "engagement", "field")
-        protocol_2_input = await self.receive("engagement", "field")
-        protocol_2_input.insert(i, protocol_1_output[i])
+        ## Protocol 0 (pre-processing)
+        protocol_0_output = protocol_0(secret, coins, i, field(1))
+        protocol_1_input = await self.communicate(protocol_0_output, "distribute", "protocol_0", "field")
+
+        ## Protocol 1
+        protocol_1_output = protocol_1(protocol_1_input, field(1))
+        protocol_2_input = await self.communicate(protocol_1_output, "broadcast", "protocol_1", "field")
 
         ## Protocol 2
         protocol_2_output = protocol_2(protocol_2_input, field(1))
-        await self.broadcast(protocol_2_output, "protocol_2", "field")
-        protocol_3_input = await self.receive("protocol_2", "field")
-        protocol_3_input.insert(i, protocol_2_output)
-
-        ## Protocol 3
-        protocol_3_output = protocol_3(protocol_3_input, field(1))
-        await self.broadcast(protocol_3_output, "protocol_3", "field")
-        final_output = await self.receive("protocol_3", "field")
-        final_output.insert(i, protocol_3_output)
+        final_output = await self.communicate(protocol_2_output, "broadcast", "protocol_2", "field")
 
         # Termination
         logger.info("[Check final outputs]")
-        if all(output == protocol_3_output for output in final_output):
-            print(success_message(protocol_3_output))
+        if all(output == protocol_2_output for output in final_output):
+            print(success_message(protocol_2_output))
         else:
             raise ValueError(error_message(final_output))

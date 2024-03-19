@@ -4,13 +4,13 @@ from zkpytoolkit.types import Private, Public, Array, field #zk_ignore
 
 # Define all single-round sequential subprotocols
 
-def protocol_1(
+def protocol_0(
     secret: Private[field],
     rand: Private[Array[field, 65]],
     local_idx: Public[int],
     _one: Public[field],
 ) -> Array[field, 66]:
-    """Protocol 1 generates the secret shares.
+    """Protocol 0 generates the secret shares.
 
     The resulting shares get privately distributed among the parties.
 
@@ -25,11 +25,11 @@ def protocol_1(
     """
     return get_additive_shares(secret, rand, local_idx, _one)
 
-def protocol_2(
+def protocol_1(
     mixed_shares: Private[Array[field, 66]],
     _one: Public[field],
 ) -> field:
-    """Protocol 2 combines all the received secret shares and initial secret.
+    """Protocol 1 combines all the received secret shares and initial secret.
 
     The resulting combination gets broadcasted to all parties.
 
@@ -42,11 +42,11 @@ def protocol_2(
     """
     return reconstruct_secret(mixed_shares, _one)
 
-def protocol_3(
+def protocol_2(
     final_shares: Private[Array[field, 66]],
     _one: Public[field],
 ) -> field:
-    """Protocol 3 obtains the sum of all secrets by combining all secret shares combinations.
+    """Protocol 2 obtains the sum of all secrets by combining all secret shares combinations.
 
     The resulting combination gets broadcasted to all parties.
 
