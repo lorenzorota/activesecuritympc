@@ -1,26 +1,16 @@
 # ActiveSecurityMPC
 
-ActiveSecurityMPC is an active security compiler for passively secure Multiparty Computation (MPC) protocols implemented to work specifically with Python >=3.10. This project serves as a proof of concept and aims to simplify the implementation of active security components on top of existing passively secure MPC protocol implementations. The current version requires users to manually implement active security components, much of which is boilerplate code, whereas in a future update this is aspired to be automated.
+ActiveSecurityMPC is an active-security compiler for passively secure Multiparty Computation (MPC) protocols (also known as a passive-to-active security compiler) implemented in Python >=3.10. This project serves as a proof of concept and aims to simplify the implementation of active security components on top of existing passively secure MPC protocol implementations. This project is a proof of concept developed as part of my [Master's thesis](https://fse.studenttheses.ub.rug.nl/33067/) at the University of Groningen. End users are required to manually implement active security components, much of which is boilerplate code (see Appendix A of the thesis and the `sum_protocol` example).
 
 ## Installation
 
-To get started with ActiveSecurityMPC, follow these steps:
+To get started with ActiveSecurityMPC, make sure to have a stable Rust compiler (as required by the [ZKPyToolkit](https://github.com/lorenzorota/zkpytoolkit) library), and simply install all dependencies as follows:
 
-1. Clone the repository using the following command:
+```bash
+pip install -r requirements.txt
+```
 
-    ```bash
-    git clone --recursive git@github.com:lorenzorota/activesecuritympc.git
-    ```
-
-    Ensure to use the --recursive flag to clone the repository along with its submodules.
-
-2. Install the required dependencies by running:
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-    It's advisable to perform this step inside a virtual environment to manage the project-specific dependencies.
+It's advisable to perform this step inside a virtual environment to manage the project-specific dependencies.
 
 ## Usage
 
@@ -30,7 +20,7 @@ Once you have installed the necessary dependencies, you can explore the provided
 bash run_demo.sh
 ```
 
-This will execute the case study implementation for the sum protocol with 3 parties, showcasing the functionality of ActiveSecurityMPC.
+This will execute the case study implementation for the sum protocol with 3 parties, showcasing the active-security compiler.
 
 ## Benchmarking
 
@@ -41,11 +31,3 @@ bash run_benchmark.sh
 ```
 
 This script will provide insights into the passively secure MPC protocol, as well as the actively secure protocol obtained via ActiveSecurityMPC. Feel free to customize the benchmarking parameters based on your requirements.
-
-## Contributing
-
-ActiveSecurityMPC is an open-source project, and contributions are welcome. If you encounter issues, have ideas for improvements, or want to contribute actively to the project, please feel free to open an issue or submit a pull request.
-
-## License
-
-tbd.
