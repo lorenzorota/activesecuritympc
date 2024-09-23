@@ -31,3 +31,11 @@ bash run_benchmark.sh
 ```
 
 This script will provide insights into the passively secure MPC protocol, as well as the actively secure protocol obtained via ActiveSecurityMPC. Feel free to customize the benchmarking parameters based on your requirements.
+
+## License
+
+This project is licensed under the **MIT** license. See the `LICENSE` files for more details.
+
+## Acknowledgements
+
+This work was developed at the University of Groningen and TNO (Department of Applied Cryptography & Quantum Algorithms).
