@@ -34,7 +34,7 @@ This script will provide insights into the passively secure MPC protocol, as wel
 
 ## License
 
-This project is licensed under the **MIT** license. See the `LICENSE` files for more details.
+This project is licensed under the **Apache 2.0** license. See the `LICENSE` files for more details.
 
 ## Acknowledgements
 
